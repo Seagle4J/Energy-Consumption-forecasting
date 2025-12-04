@@ -1,0 +1,255 @@
+!pip install xgboost
+from google.colab import files
+uploaded = files.upload()
+
+import pandas as pd
+import numpy as np
+import os
+import matplotlib.pyplot as plt
+
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, VotingRegressor, StackingRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.tree import DecisionTreeRegressor
+from xgboost import XGBRegressor
+import joblib
+DATA_PATH = "powerconsumption[1].csv"
+OUT_DIR = "pipeline_outputs_ensemble"
+os.makedirs(OUT_DIR, exist_ok=True)
+print("Loading data...")
+try:
+    df = pd.read_csv(DATA_PATH)
+except:
+    df = pd.read_csv(DATA_PATH, low_memory=True)
+if "Datetime" in df.columns:
+    df["Datetime"] = pd.to_datetime(df["Datetime"], errors="coerce")
+else:
+    for col in df.columns:
+        try:
+            parsed = pd.to_datetime(df[col], errors='coerce')
+            if parsed.notna().sum() / len(parsed) > 0.6:
+                df[col] = parsed
+                df.rename(columns={col: "Datetime"}, inplace=True)
+                break
+        except:
+            pass
+
+df = df.sort_values("Datetime").reset_index(drop=True)
+num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+df[num_cols] = df[num_cols].fillna(df[num_cols].median())
+df = df.drop_duplicates().reset_index(drop=True)
+df["TotalConsumption"] = (
+    df["PowerConsumption_Zone1"] +
+    df["PowerConsumption_Zone2"] +
+    df["PowerConsumption_Zone3"]
+)
+df["hour"] = df["Datetime"].dt.hour
+df["day"] = df["Datetime"].dt.day
+df["month"] = df["Datetime"].dt.month
+df["weekday"] = df["Datetime"].dt.weekday
+df["is_weekend"] = df["weekday"].isin([5,6]).astype(int)
+
+time_diffs = df["Datetime"].diff().dt.total_seconds().dropna() / 60
+median_interval = int(round(time_diffs.median())) if len(time_diffs) else 10
+
+samples_per_hour = max(1, int(round(60 / median_interval)))
+samples_per_day = samples_per_hour * 24
+samples_per_week = samples_per_day * 7
+
+df["lag_1"] = df["TotalConsumption"].shift(1)
+df[f"lag_{samples_per_hour}"] = df["TotalConsumption"].shift(samples_per_hour)
+df[f"lag_{samples_per_day}"] = df["TotalConsumption"].shift(samples_per_day)
+df[f"lag_{samples_per_week}"] = df["TotalConsumption"].shift(samples_per_week)
+
+df[f"rolling_{samples_per_hour}"] = df["TotalConsumption"].rolling(samples_per_hour).mean()
+df[f"rolling_{samples_per_day}"] = df["TotalConsumption"].rolling(samples_per_day).mean()
+
+df = df.dropna().reset_index(drop=True)
+split_idx = int(len(df) * 0.8)
+train = df.iloc[:split_idx]
+test  = df.iloc[split_idx:]
+
+features = [c for c in df.columns if c not in ["Datetime", "TotalConsumption"]]
+
+X_train = train[features]
+y_train = train["TotalConsumption"]
+X_test  = test[features]
+y_test  = test["TotalConsumption"]
+results = {}
+predictions = {}
+
+# =======================
+# 1. LINEAR REGRESSION
+# =======================
+lr = LinearRegression()
+lr.fit(X_train, y_train)
+pred_lr = lr.predict(X_test)
+
+results["Linear Regression"] = {
+    "MAE": mean_absolute_error(y_test, pred_lr),
+    "RMSE": (mean_squared_error(y_test, pred_lr)) ** 0.5,
+    "R2": r2_score(y_test, pred_lr)
+}
+predictions["LR"] = pred_lr
+
+
+# =======================
+# 2. RANDOM FOREST
+# =======================
+rf = RandomForestRegressor(n_estimators=150, max_depth=12, random_state=42)
+rf.fit(X_train, y_train)
+pred_rf = rf.predict(X_test)
+
+results["Random Forest"] = {
+    "MAE": mean_absolute_error(y_test, pred_rf),
+    "RMSE": (mean_squared_error(y_test, pred_lr)) ** 0.5,
+    "R2": r2_score(y_test, pred_rf)
+}
+predictions["RF"] = pred_rf
+
+
+# =======================
+# 3. XGBOOST REGRESSOR
+# =======================
+xgb = XGBRegressor(
+    n_estimators=300,
+    max_depth=6,
+    learning_rate=0.05,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    random_state=42,
+    objective="reg:squarederror"
+)
+xgb.fit(X_train, y_train)
+pred_xgb = xgb.predict(X_test)
+
+results["XGBoost"] = {
+    "MAE": mean_absolute_error(y_test, pred_xgb),
+    "RMSE": (mean_squared_error(y_test, pred_lr)) ** 0.5,
+    "R2": r2_score(y_test, pred_xgb)
+}
+predictions["XGB"] = pred_xgb
+
+
+# =======================
+# 4. VOTING ENSEMBLE
+# =======================
+voting_model = VotingRegressor(
+    estimators=[
+        ('lr', lr),
+        ('rf', rf),
+        ('xgb', xgb)
+    ]
+)
+voting_model.fit(X_train, y_train)
+pred_vote = voting_model.predict(X_test)
+
+results["Voting Ensemble"] = {
+    "MAE": mean_absolute_error(y_test, pred_vote),
+    "RMSE": (mean_squared_error(y_test, pred_lr)) ** 0.5,
+    "R2": r2_score(y_test, pred_vote)
+}
+predictions["VOTE"] = pred_vote
+
+
+# =======================
+# 5. STACKING ENSEMBLE
+# =======================
+stack_model = StackingRegressor(
+    estimators=[
+        ('lr', LinearRegression()),
+        ('rf', RandomForestRegressor(n_estimators=120, random_state=42)),
+        ('xgb', XGBRegressor(n_estimators=200, random_state=42))
+    ],
+    final_estimator=RandomForestRegressor(n_estimators=100, random_state=42)
+)
+
+stack_model.fit(X_train, y_train)
+pred_stack = stack_model.predict(X_test)
+
+results["Stacking Ensemble"] = {
+    "MAE": mean_absolute_error(y_test, pred_stack),
+    "RMSE": (mean_squared_error(y_test, pred_lr)) ** 0.5,
+    "R2": r2_score(y_test, pred_stack)
+}
+predictions["STACK"] = pred_stack
+test_out = test[["Datetime"]].copy()
+test_out["Actual"] = y_test.values
+
+for name, pred in predictions.items():
+    test_out[f"Pred_{name}"] = pred
+
+test_out.to_csv(os.path.join(OUT_DIR, "final_predictions_all_models.csv"), index=False)
+pd.DataFrame(results).T.to_csv(os.path.join(OUT_DIR, "final_model_metrics.csv"))
+print("\n================ FINAL ACCURACY USING ALL METRICS ================\n")
+
+actual_mean = y_test.mean()
+
+final_scores = {}
+
+for model_name, metrics in results.items():
+    r2 = metrics["R2"]
+    mae = metrics["MAE"]
+    rmse = metrics["RMSE"]
+
+    acc_r2 = r2 * 100
+    acc_mae = (1 - (mae / actual_mean)) * 100
+    acc_rmse = (1 - (rmse / actual_mean)) * 100
+
+    final_acc = (acc_r2 + acc_mae + acc_rmse) / 3
+
+    final_scores[model_name] = final_acc
+
+    print(f"{model_name} Accuracy Considering All Metrics: {final_acc:.2f}%")
+# ============================================================
+# TESTING ACCURACY (Using R2, MAE, RMSE Together)
+# ============================================================
+
+print("\n================ MODEL TESTING ACCURACY ================\n")
+
+actual_mean = y_test.mean()
+
+accuracy_scores = {}
+
+for model_name, metrics in results.items():
+    mae = metrics["MAE"]
+    rmse = metrics["RMSE"]
+    r2 = metrics["R2"]
+
+    # Convert metrics to accuracies
+    acc_r2 = r2 * 100
+    acc_mae = (1 - (mae / actual_mean)) * 100
+    acc_rmse = (1 - (rmse / actual_mean)) * 100
+
+    # Final combined accuracy
+    final_accuracy = (acc_r2 + acc_mae + acc_rmse) / 3
+    accuracy_scores[model_name] = final_accuracy
+
+    print(f"{model_name} Accuracy (Combined): {final_accuracy:.2f}%")
+    print(f"  - R2 Accuracy     : {acc_r2:.2f}%")
+    print(f"  - MAE Accuracy    : {acc_mae:.2f}%")
+    print(f"  - RMSE Accuracy   : {acc_rmse:.2f}%\n")
+
+# Save accuracy results
+pd.DataFrame(accuracy_scores, index=["Final_Accuracy"]).T.to_csv(
+    os.path.join(OUT_DIR, "accuracy_scores.csv")
+)
+
+print("Testing accuracy saved to accuracy_scores.csv")
+plt.figure(figsize=(14,6))
+
+t = test["Datetime"].iloc[:60]
+actual = y_test.iloc[:60]
+
+plt.plot(t, actual, label="Actual", linewidth=3, color="black")
+plt.plot(t, pred_lr[:60],  label="LR", linestyle="--")
+plt.plot(t, pred_rf[:60],  label="RF", linestyle="--")
+plt.plot(t, pred_xgb[:60], label="XGBoost", linestyle="--")
+plt.plot(t, pred_vote[:60], label="Voting Ensemble", linestyle="-.")
+plt.plot(t, pred_stack[:60], label="Stacking Ensemble", linestyle="-.")
+
+plt.legend()
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig(os.path.join(OUT_DIR, "ALL_MODELS_COMPARISON.png"))
+plt.show()
