@@ -102,7 +102,7 @@ pred_rf = rf.predict(X_test)
 
 results["Random Forest"] = {
     "MAE": mean_absolute_error(y_test, pred_rf),
-    "RMSE": (mean_squared_error(y_test, pred_lr)) ** 0.5,
+    "RMSE": (mean_squared_error(y_test, pred_rf)) ** 0.5,
     "R2": r2_score(y_test, pred_rf)
 }
 predictions["RF"] = pred_rf
