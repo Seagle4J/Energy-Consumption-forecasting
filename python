@@ -78,9 +78,8 @@ y_test  = test["TotalConsumption"]
 results = {}
 predictions = {}
 
-# =======================
 # 1. LINEAR REGRESSION
-# =======================
+
 lr = LinearRegression()
 lr.fit(X_train, y_train)
 pred_lr = lr.predict(X_test)
@@ -92,10 +91,8 @@ results["Linear Regression"] = {
 }
 predictions["LR"] = pred_lr
 
-
-# =======================
 # 2. RANDOM FOREST
-# =======================
+
 rf = RandomForestRegressor(n_estimators=150, max_depth=12, random_state=42)
 rf.fit(X_train, y_train)
 pred_rf = rf.predict(X_test)
@@ -107,10 +104,8 @@ results["Random Forest"] = {
 }
 predictions["RF"] = pred_rf
 
-
-# =======================
 # 3. XGBOOST REGRESSOR
-# =======================
+
 xgb = XGBRegressor(
     n_estimators=300,
     max_depth=6,
@@ -130,10 +125,8 @@ results["XGBoost"] = {
 }
 predictions["XGB"] = pred_xgb
 
-
-# =======================
 # 4. VOTING ENSEMBLE
-# =======================
+
 voting_model = VotingRegressor(
     estimators=[
         ('lr', lr),
@@ -151,10 +144,8 @@ results["Voting Ensemble"] = {
 }
 predictions["VOTE"] = pred_vote
 
-
-# =======================
 # 5. STACKING ENSEMBLE
-# =======================
+
 stack_model = StackingRegressor(
     estimators=[
         ('lr', LinearRegression()),
@@ -201,9 +192,9 @@ for model_name, metrics in results.items():
     final_scores[model_name] = final_acc
 
     print(f"{model_name} Accuracy Considering All Metrics: {final_acc:.2f}%")
-# ============================================================
+
 # TESTING ACCURACY (Using R2, MAE, RMSE Together)
-# ============================================================
+
 
 print("\n================ MODEL TESTING ACCURACY ================\n")
 
