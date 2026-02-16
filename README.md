@@ -80,6 +80,7 @@ Highly optimized and accurate
 Performs exceptionally well on structured data
 
  Ensemble Learning Techniques-
+
 🔹 Voting Ensemble
 
 Combines predictions from:
@@ -153,6 +154,9 @@ Evaluate performance and generate plots
 Run the testing code for unseen data
 
 ✅ Results & Conclusion
+
+<img width="455" height="253" alt="image" src="https://github.com/user-attachments/assets/da65bdca-8bfa-4a16-bbf2-475969d9193a" />
+
 
 Ensemble models significantly outperform individual models
 
