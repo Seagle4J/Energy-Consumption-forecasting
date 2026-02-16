@@ -125,7 +125,7 @@ pred_xgb = xgb.predict(X_test)
 
 results["XGBoost"] = {
     "MAE": mean_absolute_error(y_test, pred_xgb),
-    "RMSE": (mean_squared_error(y_test, pred_lr)) ** 0.5,
+    "RMSE": (mean_squared_error(y_test, pred_xgb)) ** 0.5,
     "R2": r2_score(y_test, pred_xgb)
 }
 predictions["XGB"] = pred_xgb
@@ -146,7 +146,7 @@ pred_vote = voting_model.predict(X_test)
 
 results["Voting Ensemble"] = {
     "MAE": mean_absolute_error(y_test, pred_vote),
-    "RMSE": (mean_squared_error(y_test, pred_lr)) ** 0.5,
+    "RMSE": (mean_squared_error(y_test, pred_vote)) ** 0.5,
     "R2": r2_score(y_test, pred_vote)
 }
 predictions["VOTE"] = pred_vote
@@ -169,7 +169,7 @@ pred_stack = stack_model.predict(X_test)
 
 results["Stacking Ensemble"] = {
     "MAE": mean_absolute_error(y_test, pred_stack),
-    "RMSE": (mean_squared_error(y_test, pred_lr)) ** 0.5,
+    "RMSE": (mean_squared_error(y_test, pred_stack)) ** 0.5,
     "R2": r2_score(y_test, pred_stack)
 }
 predictions["STACK"] = pred_stack
